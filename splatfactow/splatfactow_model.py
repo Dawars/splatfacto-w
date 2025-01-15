@@ -1145,6 +1145,12 @@ class SplatfactoWModel(Model):
         )
         pred_img = outputs["rgb"]
 
+        grayscale = batch["is_gray"][:, 0]
+        rgb2gray = pred_img[grayscale][:, 0] * 0.2989 + \
+                   pred_img[grayscale][:, 1] * 0.5870 + \
+                   pred_img[grayscale][:, 2] * 0.1140
+        pred_img[grayscale] = rgb2gray.unsqueeze(-1)
+
         # Set masked part of both ground-truth and rendered image to black.
         # This is a little bit sketchy for the SSIM loss.
         if "mask" in batch:
