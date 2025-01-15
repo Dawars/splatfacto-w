@@ -51,7 +51,7 @@ class NerfWDataParserConfig(DataParserConfig):
     """target class to instantiate"""
     data: Path = Path("data/brandenburg-gate")
     """Directory specifying location of data."""
-    data_name: Literal["brandenburg", "trevi", "sacre"] = "brandenburg"
+    data_name: str = "brandenburg"
     """Name of the dataset."""
     scale_factor: float = 3.0
     """How much to scale the camera origins by."""
@@ -117,10 +117,10 @@ class NerfW(DataParser):
         # kick lines that is NA
         split_data = split_data.dropna()
 
-        for _id, cam in cams.items():
-            img = imgs[_id]
+        for img_id, img in imgs.items():
             if img.name not in split_data[:]["filename"].values:
                 continue
+            cam = cams[img.camera_id]
             assert (
                 cam.model == "PINHOLE"
             ), "Only pinhole (perspective) camera model is supported at the moment"
