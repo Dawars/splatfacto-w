@@ -29,6 +29,7 @@ from nerfstudio.data.dataparsers.base_dataparser import (
     DataParser,
     DataParserConfig,
     DataparserOutputs,
+    Semantics,
 )
 from nerfstudio.data.scene_box import SceneBox
 from nerfstudio.data.utils import colmap_parsing_utils as colmap_utils
@@ -42,6 +43,161 @@ from nerfstudio.data.utils.colmap_parsing_utils import (
 )
 from nerfstudio.utils.rich_utils import CONSOLE
 
+transient_objects = ['person', 'car', 'bicycle', 'minibike', 'tree', "desk",
+                     "blanket", "bed ", "tray", "computer", "swimming pool",
+                     "plate", "basket", "glass", "food", "land",
+                     ]
+label_id_mapping_ade20k = {'airplane': 90,
+                           'animal': 126,
+                           'apparel': 92,
+                           'arcade machine': 78,
+                           'armchair': 30,
+                           'ashcan': 138,
+                           'awning': 86,
+                           'bag': 115,
+                           'ball': 119,
+                           'bannister': 95,
+                           'bar': 77,
+                           'barrel': 111,
+                           'base': 40,
+                           'basket': 112,
+                           'bathtub': 37,
+                           'bed ': 7,
+                           'bench': 69,
+                           'bicycle': 127,
+                           'blanket': 131,
+                           'blind': 63,
+                           'boat': 76,
+                           'book': 67,
+                           'bookcase': 62,
+                           'booth': 88,
+                           'bottle': 98,
+                           'box': 41,
+                           'bridge': 61,
+                           'buffet': 99,
+                           'building': 1,
+                           'bulletin board': 144,
+                           'bus': 80,
+                           'cabinet': 10,
+                           'canopy': 106,
+                           'car': 20,
+                           'case': 55,
+                           'ceiling': 5,
+                           'chair': 19,
+                           'chandelier': 85,
+                           'chest of drawers': 44,
+                           'clock': 148,
+                           'coffee table': 64,
+                           'column': 42,
+                           'computer': 74,
+                           'conveyer belt': 105,
+                           'counter': 45,
+                           'countertop': 70,
+                           'cradle': 117,
+                           'crt screen': 141,
+                           'curtain': 18,
+                           'cushion': 39,
+                           'desk': 33,
+                           'dirt track': 91,
+                           'dishwasher': 129,
+                           'door': 14,
+                           'earth': 13,
+                           'escalator': 96,
+                           'fan': 139,
+                           'fence': 32,
+                           'field': 29,
+                           'fireplace': 49,
+                           'flag': 149,
+                           'floor': 3,
+                           'flower': 66,
+                           'food': 120,
+                           'fountain': 104,
+                           'glass': 147,
+                           'grandstand': 51,
+                           'grass': 9,
+                           'hill': 68,
+                           'hood': 133,
+                           'house': 25,
+                           'hovel': 79,
+                           'kitchen island': 73,
+                           'lake': 128,
+                           'lamp': 36,
+                           'land': 94,
+                           'light': 82,
+                           'microwave': 124,
+                           'minibike': 116,
+                           'mirror': 27,
+                           'monitor': 143,
+                           'mountain': 16,
+                           'ottoman': 97,
+                           'oven': 118,
+                           'painting': 22,
+                           'palm': 72,
+                           'path': 52,
+                           'person': 12,
+                           'pier': 140,
+                           'pillow': 57,
+                           'plant': 17,
+                           'plate': 142,
+                           'plaything': 108,
+                           'pole': 93,
+                           'pool table': 56,
+                           'poster': 100,
+                           'pot': 125,
+                           'radiator': 146,
+                           'railing': 38,
+                           'refrigerator': 50,
+                           'river': 60,
+                           'road': 6,
+                           'rock': 34,
+                           'rug': 28,
+                           'runway': 54,
+                           'sand': 46,
+                           'sconce': 134,
+                           'screen': 130,
+                           'screen door': 58,
+                           'sculpture': 132,
+                           'sea': 26,
+                           'seat': 31,
+                           'shelf': 24,
+                           'ship': 103,
+                           'shower': 145,
+                           'sidewalk': 11,
+                           'signboard': 43,
+                           'sink': 47,
+                           'sky': 2,
+                           'skyscraper': 48,
+                           'sofa': 23,
+                           'stage': 101,
+                           'stairs': 53,
+                           'stairway': 59,
+                           'step': 121,
+                           'stool': 110,
+                           'stove': 71,
+                           'streetlight': 87,
+                           'swimming pool': 109,
+                           'swivel chair': 75,
+                           'table': 15,
+                           'tank': 122,
+                           'television receiver': 89,
+                           'tent': 114,
+                           'toilet': 65,
+                           'towel': 81,
+                           'tower': 84,
+                           'trade name': 123,
+                           'traffic light': 136,
+                           'tray': 137,
+                           'tree': 4,
+                           'truck': 83,
+                           'van': 102,
+                           'vase': 135,
+                           'wall': 0,
+                           'wardrobe': 35,
+                           'washer': 107,
+                           'water': 21,
+                           'waterfall': 113,
+                           'windowpane': 8}
+id_label_mapping_ade20k = {v: k for k, v in label_id_mapping_ade20k.items()}
 
 @dataclass
 class NerfWDataParserConfig(DataParserConfig):
@@ -75,7 +231,8 @@ class NerfWDataParserConfig(DataParserConfig):
     """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
     max_2D_matches_per_3D_point: int = 0
     """Maximum number of 2D matches per 3D point. If set to -1, all 2D matches are loaded. If set to 0, no 2D matches are loaded."""
-
+    include_semantics: bool = False
+    """whether or not to include loading of semantics data"""
 
 @dataclass
 class NerfW(DataParser):
@@ -215,6 +372,16 @@ class NerfW(DataParser):
                 self._load_3D_points(colmap_path, transform_matrix, scale_factor)
             )
         assert len(cameras) == len(image_filenames)
+        # --- semantics ---
+        if self.config.include_semantics:
+            semantics_filenames = [
+                (self.data / "semantic_maps" / img_path.name).with_suffix(".npz")
+                for img_path in image_filenames
+            ]
+            classes = [id_label_mapping_ade20k[i] for i in range(len(id_label_mapping_ade20k))]
+            semantics = Semantics(filenames=semantics_filenames, classes=classes, colors=None,
+                                  mask_classes=transient_objects)
+            metadata["semantics"] = semantics
 
         dataparser_outputs = DataparserOutputs(
             image_filenames=image_filenames,
