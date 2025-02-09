@@ -211,7 +211,7 @@ class NerfWDataParserConfig(DataParserConfig):
 
     _target: Type = field(default_factory=lambda: Heritage)
     """target class to instantiate"""
-    data: Path = Path("data/brandenburg-gate")
+    data: Path = Path("data/phototourism/trevi-fountain")
     """Directory specifying location of data."""
     data_name: str = "brandenburg"
     """Name of the dataset."""
@@ -404,7 +404,6 @@ class Heritage(DataParser):
         self.data: Path = config.data
         self.scale_factor: float = config.scale_factor
         self.alpha_color = config.alpha_color
-        self.train_split_percentage = config.train_split_percentage
 
     # pylint: disable=too-many-statements
     def _generate_dataparser_outputs(self, split="train"):
