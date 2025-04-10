@@ -939,7 +939,7 @@ class SplatfactoWModel(Model):
         if camera.metadata is not None and "cam_idx" in camera.metadata:
             cam_idx = camera.metadata["cam_idx"]
             if self.last_cam_idx is not None and not self.training:
-                use_cached_sh = cam_idx == self.last_cam_idx
+                use_cached_sh = cam_idx == self.last_cam_idx and self.cached_colors.shape[0] == self.appearance_features.shape[0]
                 if cam_idx != self.last_cam_idx:
                     CONSOLE.log("Current camera idx is", cam_idx)
             self.last_cam_idx = cam_idx
