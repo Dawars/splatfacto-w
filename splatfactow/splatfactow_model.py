@@ -22,6 +22,9 @@ from gsplat.cuda._wrapper import spherical_harmonics
 import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
+
+from nerfstudio.data.utils.data_utils import compute_normals_finite_diff
+from nerfstudio.utils import colormaps
 from nerfstudio.cameras.camera_utils import normalize
 from splatfactow.splatfactow_field import BGField, SplatfactoWField
 
@@ -253,6 +256,18 @@ class SplatfactoWModelConfig(ModelConfig):
     """Whether to use the average appearance embedding or 0-th for evaluation"""
     eval_right_half: bool = False
     """Whether to use the right half of the image for evluation"""
+    depth_loss_mult: float = 0.0
+    """Depth loss"""
+    normal_loss_mult_l1: float = 0.0
+    """Normal loss for l1 loss"""
+    normal_loss_mult_cos: float = 0.0
+    """Normal loss for cos loss"""
+    depth_loss_disparity: bool = False
+    """Calculate depth loss in disparity space (1/x)"""
+    sky_loss_mult: float = 0.0
+    """Depth loss"""
+    color_loss: bool = False
+    """Projecting mlp output to grayscale in rgb loss when input is grayscale"""
 
 
 class SplatfactoWModel(Model):
@@ -1080,9 +1095,16 @@ class SplatfactoWModel(Model):
         if background.shape[0] == 3:
             background = background.expand(H, W, 3)
 
+        normals_bhw3, dilated_mask = compute_normals_finite_diff(
+            depth_im[None, ..., 0], K,
+            kernel_size=5,
+            sigma=1.0)  # [-1, 1]
+
         return {
             "rgb": rgb.squeeze(0),  # type: ignore
             "depth": depth_im,  # type: ignore
+            "normal": normals_bhw3.squeeze(0),  # type: ignore
+            "normal_mask": dilated_mask.squeeze(0)[..., None],  # type: ignore
             "accumulation": alpha.squeeze(0),  # type: ignore
             "background": background.squeeze(0),  # type: ignore
         }  # type: ignore
@@ -1145,12 +1167,12 @@ class SplatfactoWModel(Model):
         )
         pred_img = outputs["rgb"]
 
-        grayscale = batch["is_gray"][:, 0]
-        rgb2gray = pred_img[grayscale][:, 0] * 0.2989 + \
-                   pred_img[grayscale][:, 1] * 0.5870 + \
-                   pred_img[grayscale][:, 2] * 0.1140
-        pred_img[grayscale] = rgb2gray.unsqueeze(-1)
-
+        if self.config.color_loss:
+            grayscale = self._downscale_if_required(batch["is_gray"])[:, :, 0] > 0.5
+            rgb2gray = pred_img[grayscale][:, 0] * 0.2989 + \
+                       pred_img[grayscale][:, 1] * 0.5870 + \
+                       pred_img[grayscale][:, 2] * 0.1140
+            pred_img[grayscale] = rgb2gray.unsqueeze(-1)
         # Set masked part of both ground-truth and rendered image to black.
         # This is a little bit sketchy for the SSIM loss.
         if "mask" in batch:
@@ -1188,6 +1210,64 @@ class SplatfactoWModel(Model):
             scale_reg = 0.1 * scale_reg.mean()
         else:
             scale_reg = torch.tensor(0.0).to(self.device)
+        # sky loss
+        fg_mask_loss = torch.tensor(0.0).to(self.device)
+        if "semantics" in batch and self.config.sky_loss_mult > 0:
+            alpha = outputs["accumulation"]
+            sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) == 2
+            sky_mask = sky_mask.to(self.device)
+            if sky_mask.sum() != 0:
+                fg_mask_loss = alpha[sky_mask].mean() * self.config.sky_loss_mult
+            # sky loss
+            # fg_label = (~sky_mask).float().to(self.device)  # sky
+            # fg_mask_loss = F.l1_loss(alpha, fg_label) * self.config.sky_loss_mult
+
+        loss_dict = {
+            "main_loss": (1 - self.config.ssim_lambda) * Ll1
+            + self.config.ssim_lambda * simloss,
+            "scale_reg": scale_reg,
+            "sky_loss": fg_mask_loss,
+        }
+        if "sensor_depth" in batch and self.config.depth_loss_mult > 0:
+            depths_gt = batch["sensor_depth"]
+
+            depths_gt = self._downscale_if_required(depths_gt)
+            depths_gt = depths_gt.to(self.device)
+            if depths_gt.shape[-1] > 1:  # has confidence
+                conf = depths_gt[:, :, 1:2]
+                depths_gt = depths_gt[:, :, 0:1]
+            else:  # no confidence
+                conf = torch.ones_like(depths_gt).to(self.device)
+                if "semantics" in batch and self.config.sky_loss_mult > 0:
+                    conf *= ~sky_mask
+            depths = outputs["depth"]
+            if self.config.depth_loss_disparity:
+                # calculate loss in disparity space
+                disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
+                disp_gt = torch.where(depths_gt > 0.0, 1.0 / depths_gt, torch.zeros_like(depths_gt))
+                depthloss = torch.mean(F.l1_loss(disp, disp_gt, reduction="none") * conf)
+            else:
+                depthloss = torch.mean(F.l1_loss(depths, depths_gt, reduction="none") * conf)
+            loss_dict["depth_loss"] = depthloss * self.config.depth_loss_mult
+        # normal loss
+        if "normal_image" in batch and self.config.normal_loss_mult_l1 > 0:
+            normal_pred = outputs["normal"]
+            normal_mask = outputs["normal_mask"]
+            normal_gt = batch["normal_image"]
+            normal_gt = self._downscale_if_required(normal_gt).to(self.device)
+            normal_gt[:, :, 0:3] = torch.nn.functional.normalize(normal_gt[:, :, 0:3], p=2, dim=0)
+            if normal_gt.shape[-1] > 3:  # has confidence
+                normal_conf = normal_gt[:, :, 3:4]
+                normal_gt = normal_gt[:, :, 0:3]
+            else:
+                normal_conf = torch.ones_like(normal_gt[..., :1]).to(self.device)
+            normal_conf = normal_conf * normal_mask
+            # if "semantics" in batch and self.config.sky_loss_mult > 0:
+            #     normal_conf *= ~sky_mask
+            normal_loss_l1 = torch.mean(F.l1_loss(normal_gt, normal_pred, reduction="none"), dim=-1, keepdim=True)
+            normal_loss_cos = 1 - torch.sum(normal_gt * normal_pred, dim=-1, keepdim=True)
+            loss_dict["normal_loss"] = torch.mean(normal_conf * (normal_loss_l1 * self.config.normal_loss_mult_l1
+                                                                 + normal_loss_cos * self.config.normal_loss_mult_cos))
 
         if self.config.enable_alpha_loss:
             alpha_loss = torch.tensor(0.0).to(self.device)
@@ -1214,13 +1294,7 @@ class SplatfactoWModel(Model):
                 alpha_loss = alpha[alpha_mask].mean() * 0.15
         else:
             alpha_loss = torch.tensor(0.0).to(self.device)
-
-        loss_dict = {
-            "main_loss": (1 - self.config.ssim_lambda) * Ll1
-            + self.config.ssim_lambda * simloss,
-            "scale_reg": scale_reg,
-            "alpha_loss": alpha_loss,
-        }
+        loss_dict["alpha_loss"] = alpha_loss
 
         if self.training:
             # Add loss from camera optimizer
@@ -1264,6 +1338,14 @@ class SplatfactoWModel(Model):
         predicted_rgb = outputs["rgb"]
         combined_rgb = torch.cat([gt_rgb, predicted_rgb], dim=1)
 
+        acc = colormaps.apply_colormap(outputs["accumulation"])
+
+        normal = outputs["normal"]
+        normal = (normal + 1.0) / 2.0
+        normal_mask = outputs["normal_mask"]
+
+        combined_acc = torch.cat([acc], dim=1)
+
         # hacked version, only eval on the right half of the image
         # cut the image in half,HW3
         if self.config.eval_right_half:
@@ -1287,7 +1369,51 @@ class SplatfactoWModel(Model):
         metrics_dict = {"psnr": float(psnr.item()), "ssim": float(ssim)}  # type: ignore
         metrics_dict["lpips"] = float(lpips)
 
-        images_dict = {"img": combined_rgb}
+        if "normal_image" in batch:
+            normal_gt = batch["normal_image"].to(self.device)
+            if normal_gt.shape[-1] > 3:  # has confidence
+                normal_conf = normal_gt[:, :, 3:4]
+                normal_gt = normal_gt[:, :, 0:3]
+                normal_mask = torch.cat([normal_conf, normal_mask], dim=1)
+            else:  # no confidence
+                normal_conf = torch.ones_like(normal_gt[..., :1]).to(self.device)
+
+            normal_gt = (normal_gt + 1.0) / 2.0
+            combined_normal = torch.cat([normal_gt, normal], dim=1)
+        else:
+            combined_normal = torch.cat([normal], dim=1)
+
+        images_dict = {"img": combined_rgb,
+                       "accumulation": combined_acc,
+                       "normal": combined_normal,
+                       "normal_mask": colormaps.apply_float_colormap(normal_mask),
+                       }
+        if self.config.depth_loss_mult > 0:
+            depths_gt = batch["sensor_depth"]
+
+            depths_gt = self._downscale_if_required(depths_gt)
+            depths_gt = depths_gt.to(self.device)
+            if depths_gt.shape[-1] > 1:  # has confidence
+                conf = depths_gt[:, :, 1:2]
+                depths_gt = depths_gt[:, :, 0:1]
+                images_dict["depth_conf"] = colormaps.apply_float_colormap(conf)
+            else:  # no confidence
+                conf = torch.tensor(1.0).to(self.device)
+            depth_pred = outputs["depth"]
+            combined_depth = torch.cat([depths_gt, depth_pred], dim=1)
+            combined_depth = colormaps.apply_depth_colormap(combined_depth)
+        else:
+            depth = colormaps.apply_depth_colormap(
+                outputs["depth"],
+                accumulation=outputs["accumulation"],
+            )
+            combined_depth = torch.cat([depth], dim=1)
+
+        images_dict["depth"] = combined_depth
+
+        if self.config.sky_loss_mult > 0:
+            sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) != 2
+            images_dict["sky_mask"] = colormaps.apply_float_colormap(sky_mask.float())
 
         return metrics_dict, images_dict
 
