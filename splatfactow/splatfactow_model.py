@@ -23,6 +23,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional, Tuple, Type, Union
 
+from nerfstudio.data.dataparsers.heritage_dataparser import label_id_mapping_ade20k
 from nerfstudio.data.utils.data_utils import compute_normals_finite_diff
 from nerfstudio.utils import colormaps
 from nerfstudio.cameras.camera_utils import normalize
@@ -265,7 +266,11 @@ class SplatfactoWModelConfig(ModelConfig):
     depth_loss_disparity: bool = False
     """Calculate depth loss in disparity space (1/x)"""
     sky_loss_mult: float = 0.0
-    """Depth loss"""
+    """Sky loss"""
+    ground_loss_mult: float = 0.0
+    """Ground loss"""
+    ground_depth_mult: float = 1.0
+    """Ground depth multiplier"""
     color_loss: bool = False
     """Projecting mlp output to grayscale in rgb loss when input is grayscale"""
 
@@ -286,6 +291,14 @@ class SplatfactoWModel(Model):
         **kwargs,
     ):
         self.seed_points = seed_points
+        ground_classes = [
+            "field",
+            "floor",
+            "house",
+            "land",
+            "road",
+            "sidewalk", ]
+        self.ground_indices = torch.tensor([label_id_mapping_ade20k[key] for key in ground_classes], dtype=torch.int64).view(1, 1, -1)
         super().__init__(*args, **kwargs)
 
     def populate_modules(self):
@@ -1231,6 +1244,12 @@ class SplatfactoWModel(Model):
         if "sensor_depth" in batch and self.config.depth_loss_mult > 0:
             depths_gt = batch["sensor_depth"]
 
+            # multiply certain classes
+            depth_multiplier = torch.ones_like(mask)
+            if "semantics" in batch:
+                ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
+                depth_multiplier = (self._downscale_if_required(ground_mask) * self.config.ground_depth_mult).to(self.device)
+
             depths_gt = self._downscale_if_required(depths_gt)
             depths_gt = depths_gt.to(self.device)
             if depths_gt.shape[-1] > 1:  # has confidence
@@ -1245,9 +1264,9 @@ class SplatfactoWModel(Model):
                 # calculate loss in disparity space
                 disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
                 disp_gt = torch.where(depths_gt > 0.0, 1.0 / depths_gt, torch.zeros_like(depths_gt))
-                depthloss = torch.mean(F.l1_loss(disp, disp_gt, reduction="none") * conf * mask)
+                depthloss = torch.mean(F.l1_loss(disp, disp_gt, reduction="none") * conf * mask * depth_multiplier)
             else:
-                depthloss = torch.mean(F.l1_loss(depths, depths_gt, reduction="none") * conf * mask)
+                depthloss = torch.mean(F.l1_loss(depths, depths_gt, reduction="none") * conf * mask * depth_multiplier)
             loss_dict["depth_loss"] = depthloss * self.config.depth_loss_mult
         # normal loss
         if "normal_image" in batch and self.config.normal_loss_mult_l1 > 0:
@@ -1361,8 +1380,15 @@ class SplatfactoWModel(Model):
         gt_rgb = torch.moveaxis(gt_rgb, -1, 0)[None, ...]
         predicted_rgb = torch.moveaxis(predicted_rgb, -1, 0)[None, ...]
 
+        if "mask" in batch:
+            # batch["mask"] : [H, W, 1]
+            mask = self._downscale_if_required(batch["mask"])
+            mask = mask.to(self.device)
+            mask = mask.permute(2, 0, 1)[None].tile(1, 3, 1, 1).bool()
+        else:
+            mask = None
         psnr = self.psnr(gt_rgb, predicted_rgb)
-        ssim = self.ssim(gt_rgb, predicted_rgb)
+        ssim = self.ssim(gt_rgb, predicted_rgb, mask)
         lpips = self.lpips(gt_rgb, predicted_rgb)
 
         # all of these metrics will be logged as scalars
@@ -1387,8 +1413,9 @@ class SplatfactoWModel(Model):
                        "accumulation": combined_acc,
                        "normal": combined_normal,
                        "normal_mask": colormaps.apply_float_colormap(normal_mask),
+                       "mask": colormaps.apply_float_colormap(mask[0].permute(1, 2, 0)),
                        }
-        if self.config.depth_loss_mult > 0:
+        if "sensor_depth" in batch:
             depths_gt = batch["sensor_depth"]
 
             depths_gt = self._downscale_if_required(depths_gt)
@@ -1402,12 +1429,16 @@ class SplatfactoWModel(Model):
             depth_pred = outputs["depth"]
             combined_depth = torch.cat([depths_gt, depth_pred], dim=1)
             combined_depth = colormaps.apply_depth_colormap(combined_depth)
+            if "semantics" in batch:
+                ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
+                images_dict["ground_mask"] = colormaps.apply_float_colormap(ground_mask.to(self.device))
         else:
             depth = colormaps.apply_depth_colormap(
                 outputs["depth"],
                 accumulation=outputs["accumulation"],
             )
             combined_depth = torch.cat([depth], dim=1)
+
 
         images_dict["depth"] = combined_depth
 
