@@ -1177,11 +1177,11 @@ class SplatfactoWModel(Model):
         # This is a little bit sketchy for the SSIM loss.
         if "mask" in batch:
             # batch["mask"] : [H, W, 1]
-            mask = torch.round(self._downscale_if_required(batch["mask"]))
+            mask = self._downscale_if_required(batch["mask"])
             mask = mask.to(self.device)
             assert mask.shape[:2] == gt_img.shape[:2] == pred_img.shape[:2]
-            # gt_img = gt_img * mask
-            # pred_img = pred_img * mask
+            gt_img = gt_img * mask
+            pred_img = pred_img * mask
 
         Ll1_img = torch.abs(gt_img - pred_img)
         if (
