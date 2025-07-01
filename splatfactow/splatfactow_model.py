@@ -1248,7 +1248,7 @@ class SplatfactoWModel(Model):
             depth_multiplier = torch.ones_like(mask)
             if "semantics" in batch:
                 ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
-                depth_multiplier = (self._downscale_if_required(ground_mask) * self.config.ground_depth_mult).to(self.device)
+                depth_multiplier[self._downscale_if_required(ground_mask).bool()] = self.config.ground_depth_mult
 
             depths_gt = self._downscale_if_required(depths_gt)
             depths_gt = depths_gt.to(self.device)
@@ -1275,6 +1275,11 @@ class SplatfactoWModel(Model):
             normal_gt = batch["normal_image"]
             normal_gt = self._downscale_if_required(normal_gt).to(self.device)
             normal_gt[:, :, 0:3] = torch.nn.functional.normalize(normal_gt[:, :, 0:3], p=2, dim=0)
+            # multiply certain classes
+            depth_multiplier = torch.ones_like(mask)
+            if "semantics" in batch:
+                ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
+                depth_multiplier[self._downscale_if_required(ground_mask).bool()] = self.config.ground_depth_mult
             if normal_gt.shape[-1] > 3:  # has confidence
                 normal_conf = normal_gt[:, :, 3:4]
                 normal_gt = normal_gt[:, :, 0:3]
@@ -1285,7 +1290,7 @@ class SplatfactoWModel(Model):
             #     normal_conf *= ~sky_mask
             normal_loss_l1 = torch.mean(F.l1_loss(normal_gt, normal_pred, reduction="none"), dim=-1, keepdim=True)
             normal_loss_cos = 1 - torch.sum(normal_gt * normal_pred, dim=-1, keepdim=True)
-            loss_dict["normal_loss"] = torch.mean(normal_conf * mask * (normal_loss_l1 * self.config.normal_loss_mult_l1
+            loss_dict["normal_loss"] = torch.mean(mask * normal_conf * depth_multiplier * (normal_loss_l1 * self.config.normal_loss_mult_l1
                                                                         + normal_loss_cos * self.config.normal_loss_mult_cos))
 
         if self.config.enable_alpha_loss:
