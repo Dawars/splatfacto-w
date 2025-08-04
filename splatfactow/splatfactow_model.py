@@ -497,7 +497,7 @@ class SplatfactoWModel(Model):
         from sklearn.neighbors import NearestNeighbors
 
         nn_model = NearestNeighbors(
-            n_neighbors=k + 1, algorithm="auto", metric="euclidean"
+            n_neighbors=k + 1, algorithm="auto", metric="euclidean", n_jobs=None,
         ).fit(x_np)
 
         # Find the k-nearest neighbors
