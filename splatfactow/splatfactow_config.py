@@ -40,7 +40,7 @@ splatfactow_config = MethodSpecification(
                 dataparser=NerfWDataParserConfig(),
                 cache_images_type="uint8",
             ),
-            model=SplatfactoWModelConfig(eval_right_half=False),
+            model=SplatfactoWModelConfig(eval_right_half=True),
         ),
         optimizers={
             "means": {
