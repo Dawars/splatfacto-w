@@ -1422,7 +1422,7 @@ class SplatfactoWModel(Model):
                        "normal_mask": colormaps.apply_float_colormap(normal_mask),
                        "mask": colormaps.apply_float_colormap(mask[0].permute(1, 2, 0)),
                        }
-        if "sensor_depth" in batch:
+        if "sensor_depth" in batch and (self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0):
             depths_gt = batch["sensor_depth"]
 
             depths_gt = self._downscale_if_required(depths_gt)
