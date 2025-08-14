@@ -269,7 +269,7 @@ class SplatfactoWModelConfig(ModelConfig):
     """Sky loss"""
     ground_loss_mult: float = 0.0
     """Ground loss"""
-    ground_depth_mult: float = 1.0
+    ground_depth_mult: float = 0.0
     """Ground depth multiplier"""
     color_loss: bool = False
     """Projecting mlp output to grayscale in rgb loss when input is grayscale"""
@@ -1248,7 +1248,7 @@ class SplatfactoWModel(Model):
 
             # multiply certain classes
             depth_multiplier = torch.ones_like(mask) * self.config.depth_loss_mult
-            if "semantics" in batch:
+            if "semantics" in batch and self.config.ground_depth_mult > 0:
                 ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
                 depth_multiplier[self._downscale_if_required(ground_mask).bool()] = self.config.ground_depth_mult
 
@@ -1279,7 +1279,7 @@ class SplatfactoWModel(Model):
             normal_gt[:, :, 0:3] = torch.nn.functional.normalize(normal_gt[:, :, 0:3], p=2, dim=0)
             # multiply certain classes
             depth_multiplier = torch.ones_like(mask) * (self.config.normal_loss_mult_l1 > 0).float()
-            if "semantics" in batch:
+            if "semantics" in batch and self.config.ground_depth_mult > 0:
                 ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
                 depth_multiplier[self._downscale_if_required(ground_mask).bool()] = self.config.ground_depth_mult
             if normal_gt.shape[-1] > 3:  # has confidence
