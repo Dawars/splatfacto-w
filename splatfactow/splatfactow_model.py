@@ -1390,6 +1390,8 @@ class SplatfactoWModel(Model):
         if "mask" in batch:
             # batch["mask"] : [H, W, 1]
             mask = self._downscale_if_required(batch["mask"])
+            if self.config.eval_right_half:
+                mask = mask[:, mask.shape[1] // 2 :, :]
             mask = mask.to(self.device)
             mask = mask.permute(2, 0, 1)[None].tile(1, 3, 1, 1).bool()
         else:
