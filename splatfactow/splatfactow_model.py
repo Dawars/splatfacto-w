@@ -1109,17 +1109,17 @@ class SplatfactoWModel(Model):
 
         if background.shape[0] == 3:
             background = background.expand(H, W, 3)
-
-        normals_bhw3, dilated_mask = compute_normals_finite_diff(
+        if render_mode == "RGB+ED":
+            normals_bhw3, dilated_mask = compute_normals_finite_diff(
             depth_im[None, ..., 0], K,
             kernel_size=5,
             sigma=1.0)  # [-1, 1]
 
         return {
             "rgb": rgb.squeeze(0),  # type: ignore
-            "depth": depth_im,  # type: ignore
-            "normal": normals_bhw3.squeeze(0),  # type: ignore
-            "normal_mask": dilated_mask.squeeze(0)[..., None],  # type: ignore
+#            "depth": depth_im,  # type: ignore
+ #           "normal": normals_bhw3.squeeze(0),  # type: ignore
+ #           "normal_mask": dilated_mask.squeeze(0)[..., None],  # type: ignore
             "accumulation": alpha.squeeze(0),  # type: ignore
             "background": background.squeeze(0),  # type: ignore
         }  # type: ignore
@@ -1366,9 +1366,10 @@ class SplatfactoWModel(Model):
 
         acc = colormaps.apply_colormap(outputs["accumulation"])
 
-        normal = outputs["normal"]
-        normal = (normal + 1.0) / 2.0
-        normal_mask = outputs["normal_mask"]
+        normal = None
+  #      normal = outputs["normal"]
+  #      normal = (normal + 1.0) / 2.0
+  #      normal_mask = outputs["normal_mask"]
 
         combined_acc = torch.cat([acc], dim=1)
 
@@ -1387,6 +1388,16 @@ class SplatfactoWModel(Model):
         gt_rgb = torch.moveaxis(gt_rgb, -1, 0)[None, ...]
         predicted_rgb = torch.moveaxis(predicted_rgb, -1, 0)[None, ...]
 
+        # all of these metrics will be logged as scalars
+        metrics_dict = {}
+
+        psnr = self.psnr(gt_rgb, predicted_rgb)
+        ssim = self.ssim(gt_rgb, predicted_rgb, None)
+        lpips = self.lpips(gt_rgb, predicted_rgb)
+        metrics_dict.update({"psnr": float(psnr.item()),
+                             "ssim": float(ssim),
+                             "lpips": float(lpips),
+                             })  # type: ignore
         if "mask" in batch:
             # batch["mask"] : [H, W, 1]
             mask = self._downscale_if_required(batch["mask"])
@@ -1394,15 +1405,40 @@ class SplatfactoWModel(Model):
                 mask = mask[:, mask.shape[1] // 2 :, :]
             mask = mask.to(self.device)
             mask = mask.permute(2, 0, 1)[None].tile(1, 3, 1, 1).bool()
+
+            gt_rgb = gt_rgb * mask
+            predicted_rgb = predicted_rgb * mask
         else:
             mask = None
-        psnr = self.psnr(gt_rgb, predicted_rgb)
-        ssim = self.ssim(gt_rgb, predicted_rgb, mask)
-        lpips = self.lpips(gt_rgb, predicted_rgb)
+
+        psnr_black_mask = self.psnr(gt_rgb, predicted_rgb)
+        ssim_black_mask = self.ssim(gt_rgb, predicted_rgb, None)
+        ssim_masked = self.ssim(gt_rgb, predicted_rgb, mask)
+        lpips_black_mask = self.lpips(gt_rgb, predicted_rgb)
 
         # all of these metrics will be logged as scalars
-        metrics_dict = {"psnr": float(psnr.item()), "ssim": float(ssim)}  # type: ignore
-        metrics_dict["lpips"] = float(lpips)
+        metrics_dict.update({"psnr_black_mask": float(psnr_black_mask.item()),
+                        "ssim_black_mask": float(ssim_black_mask),
+                        "ssim_masked": float(ssim_masked),
+                        "lpips_black_mask": float(lpips_black_mask),
+                        })  # type: ignore
+
+        # sky and transient mask by mult by 0
+        sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) != 2
+        gt_rgb = gt_rgb * sky_mask
+        predicted_rgb = predicted_rgb * sky_mask
+        psnr_sky_mask = self.psnr(gt_rgb, predicted_rgb)
+        ssim_sky_mask = self.ssim(gt_rgb, predicted_rgb, None)
+        ssim_masked_sky = self.ssim(gt_rgb, predicted_rgb, mask*sky_mask)
+        lpips_sky_mask = self.lpips(gt_rgb, predicted_rgb)
+
+        # all of these metrics will be logged as scalars
+        metrics_dict.update({"psnr_sky_mask": float(psnr_sky_mask.item()),
+                        "ssim_sky_mask": float(ssim_sky_mask),
+                        "ssim_masked_sky": float(ssim_masked_sky),
+                        "lpips_sky_mask": float(lpips_sky_mask),
+                        })  # type: ignore
+
 
         if "normal_image" in batch:
             normal_gt = batch["normal_image"].to(self.device)
@@ -1415,13 +1451,13 @@ class SplatfactoWModel(Model):
 
             normal_gt = (normal_gt + 1.0) / 2.0
             combined_normal = torch.cat([normal_gt, normal], dim=1)
-        else:
+        elif normal is not None:
             combined_normal = torch.cat([normal], dim=1)
 
         images_dict = {"img": combined_rgb,
                        "accumulation": combined_acc,
-                       "normal": combined_normal,
-                       "normal_mask": colormaps.apply_float_colormap(normal_mask),
+                #       "normal": combined_normal,
+                #       "normal_mask": colormaps.apply_float_colormap(normal_mask),
                        "mask": colormaps.apply_float_colormap(mask[0].permute(1, 2, 0)),
                        }
         if "sensor_depth" in batch and (self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0):
@@ -1444,19 +1480,17 @@ class SplatfactoWModel(Model):
             if "semantics" in batch:
                 ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
                 images_dict["ground_mask"] = colormaps.apply_float_colormap(ground_mask.to(self.device))
-        else:
+            images_dict["depth"] = combined_depth
+        elif "depth" in outputs:
             depth = colormaps.apply_depth_colormap(
                 outputs["depth"],
                 accumulation=outputs["accumulation"],
             )
             combined_depth = torch.cat([depth], dim=1)
+            images_dict["depth"] = combined_depth
 
 
-        images_dict["depth"] = combined_depth
-
-        if self.config.sky_loss_mult > 0:
-            sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) != 2
-            images_dict["sky_mask"] = colormaps.apply_float_colormap(sky_mask.float())
+        images_dict["sky_mask"] = colormaps.apply_float_colormap(sky_mask.float())
 
         return metrics_dict, images_dict
 
