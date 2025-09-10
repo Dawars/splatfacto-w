@@ -1469,7 +1469,7 @@ class SplatfactoWModel(Model):
 
             depths_gt = self._downscale_if_required(depths_gt)
             depths_gt = depths_gt.to(self.device)
-            ground_mask = torch.ones_like(mask)
+            ground_mask = torch.ones_like(depths_gt)
             if self.config.ground_depth_mult > 0:
                 ground_mask = self._downscale_if_required(ground_mask)
             if depths_gt.shape[-1] > 1:  # has confidence
