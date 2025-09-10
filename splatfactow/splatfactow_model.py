@@ -1117,7 +1117,7 @@ class SplatfactoWModel(Model):
 
         return {
             "rgb": rgb.squeeze(0),  # type: ignore
-#            "depth": depth_im,  # type: ignore
+            "depth": depth_im if render_mode == "RGB+ED" else None,  # type: ignore
  #           "normal": normals_bhw3.squeeze(0),  # type: ignore
  #           "normal_mask": dilated_mask.squeeze(0)[..., None],  # type: ignore
             "accumulation": alpha.squeeze(0),  # type: ignore
