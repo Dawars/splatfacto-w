@@ -1411,7 +1411,7 @@ class SplatfactoWModel(Model):
             gt_rgb = gt_rgb * mask
             predicted_rgb = predicted_rgb * mask
         else:
-            mask = None
+            mask = torch.ones_like(gt_rgb).bool()
 
         psnr_black_mask = self.psnr(gt_rgb, predicted_rgb)
         ssim_black_mask = self.ssim(gt_rgb, predicted_rgb, None)
