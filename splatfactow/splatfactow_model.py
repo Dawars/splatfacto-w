@@ -1433,7 +1433,7 @@ class SplatfactoWModel(Model):
                 sky_mask = sky_mask[:, sky_mask.shape[1] // 2 :, :]
                 sky_mask = sky_mask.permute(2, 0, 1)[None].tile(1, 3, 1, 1).bool()
         else:
-            sky_mask = torch.ones((1, 3, gt_rgb.shape[0], gt_rgb.shape[1]), device=gt_rgb.device).bool()
+            sky_mask = torch.ones_like(gt_rgb).bool()
 
         gt_rgb = gt_rgb * sky_mask
         predicted_rgb = predicted_rgb * sky_mask
