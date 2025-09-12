@@ -1428,13 +1428,13 @@ class SplatfactoWModel(Model):
         # sky and transient mask by mult by 0
         if "semantics" in batch:
             sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) != 2
+            if self.config.eval_right_half:
+                sky_mask = sky_mask.to(self.device)
+                sky_mask = sky_mask[:, sky_mask.shape[1] // 2 :, :]
+                sky_mask = sky_mask.permute(2, 0, 1)[None].tile(1, 3, 1, 1).bool()
         else:
-            sky_mask = torch.ones((gt_rgb.shape[0], gt_rgb.shape[1], 1), device=gt_rgb.device).bool()
+            sky_mask = torch.ones((1, 3, gt_rgb.shape[0], gt_rgb.shape[1]), device=gt_rgb.device).bool()
 
-        if self.config.eval_right_half:
-            sky_mask = sky_mask.to(self.device)
-            sky_mask = sky_mask[:, sky_mask.shape[1] // 2 :, :]
-            sky_mask = sky_mask.permute(2, 0, 1)[None].tile(1, 3, 1, 1).bool()
         gt_rgb = gt_rgb * sky_mask
         predicted_rgb = predicted_rgb * sky_mask
         psnr_sky_mask = self.psnr(gt_rgb, predicted_rgb)
