@@ -347,7 +347,7 @@ class SplatfactoWDatamanager(DataManager, Generic[TDataset]):
             return self.next_train(step)
 
         if self.dataparser.check_in_eval(image_idx):
-            CONSOLE.log(f"Masking image index {image_idx} in training as it is in eval")
+            # CONSOLE.log(f"Masking image index {image_idx} in training as it is in eval")
             H, W, _ = data["image"].shape
             # mask right half of image
 
