@@ -1197,6 +1197,8 @@ class SplatfactoWModel(Model):
             assert mask.shape[:2] == gt_img.shape[:2] == pred_img.shape[:2]
             gt_img = gt_img * mask
             pred_img = pred_img * mask
+        else:
+            mask = torch.ones((gt_img.shape[0], gt_img.shape[1], 1), device=gt_img.device).bool()
 
         Ll1_img = torch.abs(gt_img - pred_img)
         if (
@@ -1462,8 +1464,9 @@ class SplatfactoWModel(Model):
                        "accumulation": combined_acc,
                 #       "normal": combined_normal,
                 #       "normal_mask": colormaps.apply_float_colormap(normal_mask),
-                       "mask": colormaps.apply_float_colormap(mask[0].permute(1, 2, 0)),
                        }
+        if mask is not None:
+           images_dict["mask"] = colormaps.apply_float_colormap(mask[0].permute(1, 2, 0))
         if "sensor_depth" in batch and (self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0):
             depths_gt = batch["sensor_depth"]
 
