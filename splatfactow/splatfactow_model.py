@@ -1429,7 +1429,7 @@ class SplatfactoWModel(Model):
         if "semantics" in batch:
             sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) != 2
         else:
-            mask = torch.ones((gt_rgb.shape[0], gt_rgb.shape[1], 1), device=gt_rgb.device).bool()
+            sky_mask = torch.ones((gt_rgb.shape[0], gt_rgb.shape[1], 1), device=gt_rgb.device).bool()
 
         if self.config.eval_right_half:
             sky_mask = sky_mask.to(self.device)
