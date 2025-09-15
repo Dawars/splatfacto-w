@@ -1518,10 +1518,10 @@ class SplatfactoWModel(Model):
 
 
         images_dict["sky_mask"] = colormaps.apply_float_colormap(sky_mask.float()[0].permute(1, 2, 0))
-        if self.config.prior_transient_mask:
-            images_dict["depth_mult"] = colormaps.apply_float_colormap(sky_mask.float()[0].permute(1, 2, 0)*mask*self.config.depth_loss_mult)
-        else:
-            images_dict["depth_mult"] = colormaps.apply_float_colormap(sky_mask.float()[0].permute(1, 2, 0)*self.config.depth_loss_mult)
+        # if self.config.prior_transient_mask:
+        #     images_dict["depth_mult"] = colormaps.apply_float_colormap(sky_mask.float()[0].permute(1, 2, 0)*mask*self.config.depth_loss_mult)
+        # else:
+        #     images_dict["depth_mult"] = colormaps.apply_float_colormap(sky_mask.float()[0].permute(1, 2, 0)*self.config.depth_loss_mult)
 
         return metrics_dict, images_dict
 
