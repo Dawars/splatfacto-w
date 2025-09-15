@@ -271,6 +271,8 @@ class SplatfactoWModelConfig(ModelConfig):
     """Ground loss"""
     ground_depth_mult: float = 0.0
     """Ground depth multiplier"""
+    prior_transient_mask: bool = True
+    """Whether to mask out depth and normal loss using transient mask"""
     color_loss: bool = False
     """Projecting mlp output to grayscale in rgb loss when input is grayscale"""
 
@@ -1245,6 +1247,14 @@ class SplatfactoWModel(Model):
             "scale_reg": scale_reg,
             "sky_loss": fg_mask_loss,
         }
+
+        if (("sensor_depth" in batch and (self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0)) or
+                ("normal_image" in batch and (self.config.normal_loss_mult_l1 > 0 or self.config.ground_depth_mult > 0))):
+            if self.config.prior_transient_mask:
+                prior_mask = mask
+            else:
+                prior_mask = torch.ones_like(mask).bool()
+
         if "sensor_depth" in batch and (self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0):
             depths_gt = batch["sensor_depth"]
 
