@@ -267,6 +267,7 @@ class SplatfactoWModelConfig(ModelConfig):
     """Calculate depth loss in disparity space (1/x)"""
     sky_loss_mult: float = 0.0
     """Sky loss"""
+    sky_loss_type: Literal["mean", "l1", "bce"] = "mean"
     ground_loss_mult: float = 0.0
     """Ground loss"""
     ground_depth_mult: float = 0.0
@@ -1233,14 +1234,19 @@ class SplatfactoWModel(Model):
         fg_mask_loss = torch.tensor(0.0).to(self.device)
         if "semantics" in batch and self.config.sky_loss_mult > 0:
             alpha = outputs["accumulation"]
-            sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) == 2
+            sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) == 2  # white for sky, black for else
             sky_mask = sky_mask.to(self.device)
-            if sky_mask.sum() != 0:
-                fg_mask_loss = alpha[sky_mask].mean() * self.config.sky_loss_mult
-            # sky loss
-            # fg_label = (~sky_mask).float().to(self.device)  # sky
-            # fg_mask_loss = F.l1_loss(alpha, fg_label) * self.config.sky_loss_mult
-
+            if self.config.sky_loss_type == "mean":
+                if sky_mask.sum() != 0:
+                    fg_mask_loss = alpha[sky_mask].mean() * self.config.sky_loss_mult
+            elif self.config.sky_loss_type == "l1":
+                fg_label = (~sky_mask).float().to(self.device)  # sky
+                fg_mask_loss = F.l1_loss(alpha, fg_label) * self.config.sky_loss_mult
+            elif self.config.sky_loss_type == "bce":
+                fg_label = (~sky_mask).float().to(self.device)  # sky
+                fg_mask_loss = F.binary_cross_entropy(alpha, fg_label) * self.config.sky_loss_mult
+            else:
+                raise NotImplementedError
         loss_dict = {
             "main_loss": (1 - self.config.ssim_lambda) * Ll1
             + self.config.ssim_lambda * simloss,
