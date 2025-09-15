@@ -1278,9 +1278,9 @@ class SplatfactoWModel(Model):
                 # calculate loss in disparity space
                 disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
                 disp_gt = torch.where(depths_gt > 0.0, 1.0 / depths_gt, torch.zeros_like(depths_gt))
-                depthloss = torch.mean(F.l1_loss(disp, disp_gt, reduction="none") * conf * mask * depth_multiplier)
+                depthloss = torch.mean(F.l1_loss(disp, disp_gt, reduction="none") * conf * prior_mask * depth_multiplier)
             else:
-                depthloss = torch.mean(F.l1_loss(depths, depths_gt, reduction="none") * conf * mask * depth_multiplier)
+                depthloss = torch.mean(F.l1_loss(depths, depths_gt, reduction="none") * conf * prior_mask * depth_multiplier)
             loss_dict["depth_loss"] = depthloss
         # normal loss
         if "normal_image" in batch and (self.config.normal_loss_mult_l1 > 0 or self.config.ground_depth_mult > 0):
@@ -1304,7 +1304,7 @@ class SplatfactoWModel(Model):
             #     normal_conf *= ~sky_mask
             normal_loss_l1 = torch.mean(F.l1_loss(normal_gt, normal_pred, reduction="none"), dim=-1, keepdim=True)
             normal_loss_cos = 1 - torch.sum(normal_gt * normal_pred, dim=-1, keepdim=True)
-            loss_dict["normal_loss"] = torch.mean(mask * normal_conf * (normal_loss_l1 * depth_multiplier * self.config.normal_loss_mult_l1
+            loss_dict["normal_loss"] = torch.mean(prior_mask * normal_conf * (normal_loss_l1 * depth_multiplier * self.config.normal_loss_mult_l1
                                                                         + normal_loss_cos * depth_multiplier * self.config.normal_loss_mult_cos))
 
         if self.config.enable_alpha_loss:
