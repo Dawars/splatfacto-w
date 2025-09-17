@@ -1284,7 +1284,7 @@ class SplatfactoWModel(Model):
             if self.config.ground_loss_mult > 0:
                 # if predicted depth is below renderd ground depth AND not sky
                 # depth won't backprop for empty regions (alpha==0) but value is max depth in image
-                below_ground = (depths_gt < depths) & ~sky_mask
+                below_ground = (depths_gt < depths) & ~sky_mask & (depths_gt > 0)
                 below_ground[:below_ground.shape[0] // 2] = False  # lower half only
 
                 if self.config.depth_loss_disparity:
@@ -1550,7 +1550,7 @@ class SplatfactoWModel(Model):
 
             sky_mask_full = torch.round(self._downscale_if_required(batch["semantics"])) != 2  # white for non sky, black for sky
             sky_mask_full = sky_mask_full.to(self.device)
-            below_ground_mask = ((depths_gt < depth_pred) & sky_mask_full)
+            below_ground_mask = ((depths_gt < depth_pred) & sky_mask_full & (depths_gt > 0))
             below_ground_mask[:below_ground_mask.shape[0] // 2] = False  # lower half only
 
             images_dict["below_ground_mask"] = colormaps.apply_float_colormap(below_ground_mask.float())
