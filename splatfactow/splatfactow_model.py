@@ -1286,7 +1286,7 @@ class SplatfactoWModel(Model):
                 # depth won't backprop for empty regions (alpha==0) but value is max depth in image
                 below_ground = (depths_gt < depths) & ~sky_mask
                 print("below ground shape", below_ground.shape)
-                # below_ground[h//2:]  # todo lower half only
+                below_ground[:below_ground.shape[0] // 2] = False  # lower half only
 
                 if self.config.depth_loss_disparity:
                     # calculate loss in disparity space
@@ -1306,7 +1306,7 @@ class SplatfactoWModel(Model):
                 #     ground_solid_loss = alpha[sky_mask].mean() * self.config.sky_loss_mult
                 #     fg_label = (~sky_mask).float().to(self.device)  # sky
                 #     # fg_mask_loss = torch.mean(F.l1_loss(alpha, fg_label, reduction="none") * below_ground) * self.config.sky_loss_mult
-            # make it a separate ground_loss
+
             if self.config.depth_loss_disparity:
                 # calculate loss in disparity space
                 disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
@@ -1515,15 +1515,6 @@ class SplatfactoWModel(Model):
         if mask is not None:
            images_dict["mask"] = colormaps.apply_float_colormap(mask[0].permute(1, 2, 0))
 
-        if self.config.ground_loss_mult > 0:
-
-            depths_gt = batch["sensor_depth"]
-            depth_pred = outputs["depth"]
-            below_ground_mask = ((depths_gt < depth_pred) & sky_mask)
-            # todo lower half
-            print(below_ground_mask.shape)
-            images_dict["below_ground_mask"] = colormaps.apply_float_colormap(below_ground_mask.float()[0].permute(1, 2, 0))
-
         if "sensor_depth" in batch and (self.config.ground_loss_mult > 0 or
                                         self.config.depth_loss_mult > 0 or
                                         self.config.ground_depth_mult > 0):
@@ -1557,6 +1548,12 @@ class SplatfactoWModel(Model):
             combined_depth = torch.cat([depth], dim=1)
             images_dict["depth"] = combined_depth
 
+        if self.config.ground_loss_mult > 0:
+            below_ground_mask = ((depths_gt < depth_pred) & sky_mask)
+            print(below_ground_mask.shape)
+            below_ground_mask[:below_ground_mask.shape[0] // 2] = False  # lower half only
+
+            images_dict["below_ground_mask"] = colormaps.apply_float_colormap(below_ground_mask.float()[0].permute(1, 2, 0))
 
         images_dict["sky_mask"] = colormaps.apply_float_colormap(sky_mask.float()[0].permute(1, 2, 0))
         # if self.config.prior_transient_mask:
