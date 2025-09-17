@@ -1263,11 +1263,25 @@ class SplatfactoWModel(Model):
             else:
                 prior_mask = torch.ones_like(mask).bool()
 
-        if "sensor_depth" in batch and (self.config.ground_loss_mult > 0 or
-                                        self.config.depth_loss_mult > 0 or
-                                        self.config.ground_depth_mult > 0):
+        if (self.config.ground_loss_mult > 0 or self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0):
             depths_gt = batch["sensor_depth"]
             depths = outputs["depth"]
+
+            # multiply certain classes
+            depth_multiplier = torch.ones_like(mask) * self.config.depth_loss_mult
+            if "semantics" in batch and self.config.ground_depth_mult > 0:
+                ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
+                depth_multiplier[self._downscale_if_required(ground_mask).bool()] = self.config.ground_depth_mult
+
+            depths_gt = self._downscale_if_required(depths_gt)
+            depths_gt = depths_gt.to(self.device)
+            if depths_gt.shape[-1] > 1:  # has confidence
+                conf = depths_gt[:, :, 1:2]
+                depths_gt = depths_gt[:, :, 0:1]
+            else:  # no confidence
+                conf = torch.ones_like(depths_gt).to(self.device)
+                if "semantics" in batch and self.config.sky_loss_mult > 0:
+                    conf *= ~sky_mask  # black for sky, white for else
 
             if self.config.ground_loss_mult > 0:
                 # if predicted depth is below renderd ground depth AND not sky
@@ -1296,21 +1310,6 @@ class SplatfactoWModel(Model):
                 #     # fg_mask_loss = torch.mean(F.l1_loss(alpha, fg_label, reduction="none") * below_ground) * self.config.sky_loss_mult
             # make it a separate ground_loss
 
-            # multiply certain classes
-            depth_multiplier = torch.ones_like(mask) * self.config.depth_loss_mult
-            if "semantics" in batch and self.config.ground_depth_mult > 0:
-                ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
-                depth_multiplier[self._downscale_if_required(ground_mask).bool()] = self.config.ground_depth_mult
-
-            depths_gt = self._downscale_if_required(depths_gt)
-            depths_gt = depths_gt.to(self.device)
-            if depths_gt.shape[-1] > 1:  # has confidence
-                conf = depths_gt[:, :, 1:2]
-                depths_gt = depths_gt[:, :, 0:1]
-            else:  # no confidence
-                conf = torch.ones_like(depths_gt).to(self.device)
-                if "semantics" in batch and self.config.sky_loss_mult > 0:
-                    conf *= ~sky_mask  # black for sky, white for else
             if self.config.depth_loss_disparity:
                 # calculate loss in disparity space
                 disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
@@ -1320,7 +1319,7 @@ class SplatfactoWModel(Model):
                 depthloss = torch.mean(F.l1_loss(depths, depths_gt, reduction="none") * conf * prior_mask * depth_multiplier)
             loss_dict["depth_loss"] = depthloss
         # normal loss
-        if "normal_image" in batch and (self.config.normal_loss_mult_l1 > 0 or self.config.ground_depth_mult > 0):
+        if (self.config.normal_loss_mult_l1 > 0 or self.config.ground_depth_mult > 0):
             normal_pred = outputs["normal"]
             normal_mask = outputs["normal_mask"]
             normal_gt = batch["normal_image"]
