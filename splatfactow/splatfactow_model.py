@@ -1256,12 +1256,10 @@ class SplatfactoWModel(Model):
             "sky_loss": fg_mask_loss,
         }
 
-        if (("sensor_depth" in batch and (self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0)) or
-                ("normal_image" in batch and (self.config.normal_loss_mult_l1 > 0 or self.config.ground_depth_mult > 0))):
-            if self.config.prior_transient_mask:
-                prior_mask = mask
-            else:
-                prior_mask = torch.ones_like(mask).bool()
+        if self.config.prior_transient_mask:
+            prior_mask = mask
+        else:
+            prior_mask = torch.ones_like(mask).bool()
 
         if (self.config.ground_loss_mult > 0 or self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0):
             depths_gt = batch["sensor_depth"]
@@ -1309,7 +1307,6 @@ class SplatfactoWModel(Model):
                 #     fg_label = (~sky_mask).float().to(self.device)  # sky
                 #     # fg_mask_loss = torch.mean(F.l1_loss(alpha, fg_label, reduction="none") * below_ground) * self.config.sky_loss_mult
             # make it a separate ground_loss
-
             if self.config.depth_loss_disparity:
                 # calculate loss in disparity space
                 disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
