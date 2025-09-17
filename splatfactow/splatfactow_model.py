@@ -1522,7 +1522,7 @@ class SplatfactoWModel(Model):
             depth_pred = outputs["depth"]
             below_ground_mask = ((depths_gt < depth_pred) & sky_mask)
             # todo lower half
-            print(ground_mask.shape)
+            print(below_ground_mask.shape)
             images_dict["below_ground_mask"] = colormaps.apply_float_colormap(below_ground_mask.float()[0].permute(1, 2, 0))
 
         if "sensor_depth" in batch and (self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0):
