@@ -1234,7 +1234,7 @@ class SplatfactoWModel(Model):
             scale_reg = torch.tensor(0.0).to(self.device)
         # sky loss
         fg_mask_loss = torch.tensor(0.0).to(self.device)
-        if "semantics" in batch and self.config.sky_loss_mult > 0:
+        if self.config.sky_loss_mult > 0:
             alpha = outputs["accumulation"]
             sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) == 2  # white for sky, black for else
             sky_mask = sky_mask.to(self.device)
