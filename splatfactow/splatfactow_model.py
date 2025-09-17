@@ -270,6 +270,8 @@ class SplatfactoWModelConfig(ModelConfig):
     sky_loss_type: Literal["mean", "l1", "bce"] = "mean"
     ground_loss_mult: float = 0.0
     """Ground loss"""
+    ground_solid_loss_mult: float = 0.0
+    """Make ground alpha 1 (solid)"""
     ground_depth_mult: float = 0.0
     """Ground depth multiplier"""
     prior_transient_mask: bool = True
@@ -1263,6 +1265,33 @@ class SplatfactoWModel(Model):
 
         if "sensor_depth" in batch and (self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0):
             depths_gt = batch["sensor_depth"]
+            depths = outputs["depth"]
+
+            if self.config.ground_loss_mult > 0:
+                # if predicted depth is below renderd ground depth AND not sky
+                # depth won't backprop for empty regions (alpha==0) but value is max depth in image
+                below_ground = (depths_gt < depths) & ~sky_mask
+                # below_ground[h//2:]  # todo lower half only
+
+                if self.config.depth_loss_disparity:
+                    # calculate loss in disparity space
+                    disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
+                    disp_gt = torch.where(depths_gt > 0.0, 1.0 / depths_gt, torch.zeros_like(depths_gt))
+                    groundloss = torch.mean(
+                        F.l1_loss(disp, disp_gt, reduction="none") * below_ground) * self.config.ground_loss_mult
+                else:
+                    groundloss = torch.mean(
+                        F.l1_loss(depths, depths_gt, reduction="none") * below_ground) * self.config.ground_loss_mult
+                loss_dict["ground_loss"] = groundloss
+
+                assert self.config.ground_solid_loss_mult == 0, "Not implemented"
+                # make alpha loss solid
+                # ground_solid_loss =
+                # if below_ground.sum() != 0:
+                #     ground_solid_loss = alpha[sky_mask].mean() * self.config.sky_loss_mult
+                #     fg_label = (~sky_mask).float().to(self.device)  # sky
+                #     # fg_mask_loss = torch.mean(F.l1_loss(alpha, fg_label, reduction="none") * below_ground) * self.config.sky_loss_mult
+            # make it a separate ground_loss
 
             # multiply certain classes
             depth_multiplier = torch.ones_like(mask) * self.config.depth_loss_mult
@@ -1278,8 +1307,7 @@ class SplatfactoWModel(Model):
             else:  # no confidence
                 conf = torch.ones_like(depths_gt).to(self.device)
                 if "semantics" in batch and self.config.sky_loss_mult > 0:
-                    conf *= ~sky_mask
-            depths = outputs["depth"]
+                    conf *= ~sky_mask  # black for sky, white for else
             if self.config.depth_loss_disparity:
                 # calculate loss in disparity space
                 disp = torch.where(depths > 0.0, 1.0 / depths, torch.zeros_like(depths))
@@ -1443,7 +1471,7 @@ class SplatfactoWModel(Model):
 
         # sky and transient mask by mult by 0
         if "semantics" in batch:
-            sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) != 2
+            sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) != 2  # white for non sky, black for sky
             if self.config.eval_right_half:
                 sky_mask = sky_mask.to(self.device)
                 sky_mask = sky_mask[:, sky_mask.shape[1] // 2 :, :]
@@ -1487,6 +1515,16 @@ class SplatfactoWModel(Model):
                        }
         if mask is not None:
            images_dict["mask"] = colormaps.apply_float_colormap(mask[0].permute(1, 2, 0))
+
+        if self.config.ground_loss_mult > 0:
+
+            depths_gt = batch["sensor_depth"]
+            depth_pred = outputs["depth"]
+            below_ground_mask = ((depths_gt < depth_pred) & sky_mask)
+            # todo lower half
+            print(ground_mask.shape)
+            images_dict["below_ground_mask"] = colormaps.apply_float_colormap(below_ground_mask.float()[0].permute(1, 2, 0))
+
         if "sensor_depth" in batch and (self.config.depth_loss_mult > 0 or self.config.ground_depth_mult > 0):
             depths_gt = batch["sensor_depth"]
 
