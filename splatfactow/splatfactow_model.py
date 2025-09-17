@@ -1271,6 +1271,7 @@ class SplatfactoWModel(Model):
                 # if predicted depth is below renderd ground depth AND not sky
                 # depth won't backprop for empty regions (alpha==0) but value is max depth in image
                 below_ground = (depths_gt < depths) & ~sky_mask
+                print("below ground shape", below_ground.shape)
                 # below_ground[h//2:]  # todo lower half only
 
                 if self.config.depth_loss_disparity:
