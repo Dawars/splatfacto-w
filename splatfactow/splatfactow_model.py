@@ -1548,8 +1548,8 @@ class SplatfactoWModel(Model):
             images_dict["depth"] = combined_depth
 
         if self.config.ground_loss_mult > 0:
-            print(f"{depths_gt.shape=} {depth_pred.shape=} {sky_mask[0].permute(1, 2, 0)}")
-            below_ground_mask = ((depths_gt < depth_pred) & sky_mask[0].permute(1, 2, 0))
+            print(f"{depths_gt.shape=} {depth_pred.shape=} {sky_mask.shape}")
+            below_ground_mask = ((depths_gt < depth_pred) & sky_mask.permute(1, 2, 0))
             below_ground_mask[:below_ground_mask.shape[0] // 2] = False  # lower half only
 
             images_dict["below_ground_mask"] = colormaps.apply_float_colormap(below_ground_mask.float()[0].permute(1, 2, 0))
