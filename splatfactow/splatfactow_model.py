@@ -1546,7 +1546,9 @@ class SplatfactoWModel(Model):
                 conf = torch.tensor(1.0).to(self.device)
             depth_pred = outputs["depth"]
             combined_depth = torch.cat([depths_gt * ground_mask, depth_pred], dim=1)
-            combined_depth = colormaps.apply_depth_colormap(combined_depth)
+            print(f'{outputs["accumulation"].shape=}')
+            combined_depth = colormaps.apply_depth_colormap(combined_depth,
+                                                            accumulation=torch.cat([torch.ones_like(outputs["accumulation"]), outputs["accumulation"], ], dim=1))
             if "semantics" in batch:
                 ground_mask = torch.sum(batch["semantics"] == self.ground_indices, dim=-1, keepdim=True) != 0
                 images_dict["ground_mask"] = colormaps.apply_float_colormap(ground_mask.to(self.device))
