@@ -1233,11 +1233,13 @@ class SplatfactoWModel(Model):
         else:
             scale_reg = torch.tensor(0.0).to(self.device)
         # sky loss
+        if "semantics" in batch:
+            sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) == 2  # white for sky, black for else
+            sky_mask = sky_mask.to(self.device)
         fg_mask_loss = torch.tensor(0.0).to(self.device)
         if self.config.sky_loss_mult > 0:
             alpha = outputs["accumulation"]
-            sky_mask = torch.round(self._downscale_if_required(batch["semantics"])) == 2  # white for sky, black for else
-            sky_mask = sky_mask.to(self.device)
+
             if self.config.sky_loss_type == "mean":
                 if sky_mask.sum() != 0:
                     fg_mask_loss = alpha[sky_mask].mean() * self.config.sky_loss_mult
@@ -1477,19 +1479,19 @@ class SplatfactoWModel(Model):
         else:
             sky_mask = torch.ones_like(gt_rgb).bool()
 
-        gt_rgb = gt_rgb * sky_mask
-        predicted_rgb = predicted_rgb * sky_mask
-        psnr_sky_mask = self.psnr(gt_rgb, predicted_rgb)
-        ssim_sky_mask = self.ssim(gt_rgb, predicted_rgb, None)
-        ssim_masked_sky = self.ssim(gt_rgb, predicted_rgb, mask*sky_mask)
-        lpips_sky_mask = self.lpips(gt_rgb, predicted_rgb)
+        # gt_rgb = gt_rgb * sky_mask
+        # predicted_rgb = predicted_rgb * sky_mask
+        # psnr_sky_mask = self.psnr(gt_rgb, predicted_rgb)
+        # ssim_sky_mask = self.ssim(gt_rgb, predicted_rgb, None)
+        # ssim_masked_sky = self.ssim(gt_rgb, predicted_rgb, mask*sky_mask)
+        # lpips_sky_mask = self.lpips(gt_rgb, predicted_rgb)
 
         # all of these metrics will be logged as scalars
-        metrics_dict.update({"psnr_sky_mask": float(psnr_sky_mask.item()),
-                        "ssim_sky_mask": float(ssim_sky_mask),
-                        "ssim_masked_sky": float(ssim_masked_sky),
-                        "lpips_sky_mask": float(lpips_sky_mask),
-                        })  # type: ignore
+        # metrics_dict.update({"psnr_sky_mask": float(psnr_sky_mask.item()),
+        #                 "ssim_sky_mask": float(ssim_sky_mask),
+        #                 "ssim_masked_sky": float(ssim_masked_sky),
+        #                 "lpips_sky_mask": float(lpips_sky_mask),
+        #                 })  # type: ignore
 
 
         if "normal_image" in batch:
