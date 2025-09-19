@@ -1218,7 +1218,8 @@ class SplatfactoWModel(Model):
             Ll1 = Ll1_img.mean()
 
         simloss = 1 - self.ssim(
-            gt_img.permute(2, 0, 1)[None, ...], pred_img.permute(2, 0, 1)[None, ...], mask.permute(2, 0, 1)[None].tile(1, 3, 1, 1).bool()
+            gt_img.permute(2, 0, 1)[None, ...], pred_img.permute(2, 0, 1)[None, ...],
+            # mask.permute(2, 0, 1)[None].tile(1, 3, 1, 1).bool()
         )
         if self.config.use_scale_regularization and self.step % 10 == 0:
             scale_exp = torch.exp(self.scales)
