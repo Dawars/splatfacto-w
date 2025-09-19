@@ -1219,6 +1219,7 @@ class SplatfactoWModel(Model):
 
         simloss = 1 - self.ssim(
             gt_img.permute(2, 0, 1)[None, ...], pred_img.permute(2, 0, 1)[None, ...],
+            None
             # mask.permute(2, 0, 1)[None].tile(1, 3, 1, 1).bool()
         )
         if self.config.use_scale_regularization and self.step % 10 == 0:
