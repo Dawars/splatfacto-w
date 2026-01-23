@@ -1038,11 +1038,11 @@ class SplatfactoWModel(Model):
         if use_cached_sh and self.cached_colors is not None:
             colors = self.cached_colors
         else:
-            print(f"{appearance_embed.shape=} {appearance_features.shape=} {temporal_embed.shape=}")
+            # print(f"{appearance_embed.shape=} {appearance_features.shape=} {temporal_embed.shape=}")
             colors = self.color_nn(
                 appearance_embed.repeat(appearance_features.shape[0], 1),
                 appearance_features,
-                temporal_embed.repeat(appearance_features.shape[0], 1),
+                temporal_embed.repeat(appearance_features.shape[0], 1), # todo make it optional
             ).float()
             self.cached_colors = colors
 
