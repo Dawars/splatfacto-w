@@ -999,6 +999,7 @@ class SplatfactoWModel(Model):
                 appearance_embed = self.appearance_embeds(
                     torch.tensor(0, device=self.device)
                 )
+        # todo add option to set during eval/rendering
         if self.config.temporal_embed_dim > 0:
             temporal_embed = self.temporal_embeds(
                 torch.tensor(camera.metadata.get("years", 1960)-1900, device=self.device)
@@ -1393,13 +1394,14 @@ class SplatfactoWModel(Model):
 
     @torch.no_grad()
     def get_outputs_for_camera(
-        self, camera: Cameras, obb_box: Optional[OrientedBox] = None
+        self, camera: Cameras, obb_box: Optional[OrientedBox] = None, camera_id: int = 0
     ) -> Dict[str, torch.Tensor]:
         """Takes in a camera, generates the raybundle, and computes the output of the model.
         Overridden for a camera-based gaussian model.
 
         Args:
             camera: generates raybundle
+            camera_id: used for selecting test-time appearance embedding
         """
         assert camera is not None, "must provide camera to gaussian model"
         self.set_crop(obb_box)
