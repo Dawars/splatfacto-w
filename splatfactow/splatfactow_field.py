@@ -83,6 +83,7 @@ class SplatfactoWField(Field):
         self,
         appearance_embed_dim: int,
         appearance_features_dim: int,
+        temporal_embed_dim: int = 0,
         implementation: Literal["tcnn", "torch"] = "torch",
         sh_levels: int = 4,
         num_layers: int = 3,
@@ -91,7 +92,7 @@ class SplatfactoWField(Field):
         super().__init__()
 
         self.encoder = MLP(
-            in_dim=appearance_embed_dim + appearance_features_dim,
+            in_dim=appearance_embed_dim + appearance_features_dim + temporal_embed_dim,
             num_layers=num_layers - 1,
             layer_width=layer_width,
             out_dim=layer_width,
@@ -117,9 +118,10 @@ class SplatfactoWField(Field):
         self,
         appearance_embed: Tensor,
         appearance_features: Tensor,
+        temporal_embed: Tensor,
     ) -> Tensor:
         x = self.encoder(
-            torch.cat((appearance_embed, appearance_features), dim=-1)
+            torch.cat((appearance_embed, appearance_features, temporal_embed), dim=-1)
         ).float()
         base_color = self.sh_base_head(x)
         sh_rest = self.sh_rest_head(x)
@@ -130,9 +132,10 @@ class SplatfactoWField(Field):
         self,
         appearance_embed: Tensor,
         appearance_features: Tensor,
+        temporal_embed: Tensor,
     ) -> Tensor:
         x = self.encoder(
-            torch.cat((appearance_embed, appearance_features), dim=-1)
+            torch.cat((appearance_embed, appearance_features, temporal_embed), dim=-1)
         ).float()
         base_color = self.sh_base_head(x)
         return base_color.view(-1, 3)
@@ -141,9 +144,10 @@ class SplatfactoWField(Field):
         self,
         appearance_embed: Tensor,
         appearance_features: Tensor,
+        temporal_embed: Tensor,
     ) -> Tensor:
         x = self.encoder(
-            torch.cat((appearance_embed, appearance_features), dim=-1)
+            torch.cat((appearance_embed, appearance_features, temporal_embed), dim=-1)
         ).float()
         sh_rest = self.sh_rest_head(x)
         return sh_rest.view(-1, (self.sh_dim - 1), 3)

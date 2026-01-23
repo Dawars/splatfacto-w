@@ -229,6 +229,8 @@ class SplatfactoWModelConfig(ModelConfig):
     """Implementation of the models"""
     appearance_embed_dim: int = 48
     """Dimension of the appearance embedding, if 0, no appearance embedding is used"""
+    temporal_embed_dim: int = 0
+    """Dimension of the temporal embedding, if 0, no appearance embedding is used"""
     app_num_layers: int = 3
     """Number of layers in the appearance model"""
     app_layer_width: int = 256
@@ -381,6 +383,11 @@ class SplatfactoWModel(Model):
         self.appearance_embeds = torch.nn.Embedding(
             self.num_train_data, self.config.appearance_embed_dim
         )
+        # 1900-1990 -> 0-90/100
+        if self.config.temporal_embed_dim > 0:
+            self.temporal_embeds = torch.nn.Embedding(
+                100, self.config.temporal_embed_dim
+            )
 
         if self.config.enable_bg_model:
             self.bg_model = BGField(
@@ -396,6 +403,7 @@ class SplatfactoWModel(Model):
         self.color_nn = SplatfactoWField(
             appearance_embed_dim=self.config.appearance_embed_dim,
             appearance_features_dim=self.config.appearance_features_dim,
+            temporal_embed_dim=self.config.temporal_embed_dim,
             implementation=self.config.implementation,
             sh_levels=self.config.sh_degree,
             num_layers=self.config.app_num_layers,
@@ -428,6 +436,7 @@ class SplatfactoWModel(Model):
 
     @property
     def shs_0(self):
+        print(f"{'shs_0 called':=^20}")
         appearance_features = self.gauss_params["appearance_features"]
         appearance_embed = self.appearance_embeds(
             torch.tensor(self.camera_idx, device=self.device)
@@ -439,6 +448,7 @@ class SplatfactoWModel(Model):
 
     @property
     def shs_rest(self):
+        print(f"{'shs_rest called':=^20}")
         appearance_features = self.gauss_params["appearance_features"]
         appearance_embed = self.appearance_embeds(
             torch.tensor(self.camera_idx, device=self.device)
@@ -989,7 +999,10 @@ class SplatfactoWModel(Model):
                 appearance_embed = self.appearance_embeds(
                     torch.tensor(0, device=self.device)
                 )
-
+        if self.config.temporal_embed_dim > 0:
+            temporal_embed = self.temporal_embeds(
+                torch.tensor(camera.metadata.get("years", 1960)-1900, device=self.device)
+            )
         if self.training:
             assert camera.shape[0] == 1, "Only one camera at a time"
             optimized_camera_to_world = self.camera_optimizer.apply_to_camera(camera)
@@ -1024,9 +1037,11 @@ class SplatfactoWModel(Model):
         if use_cached_sh and self.cached_colors is not None:
             colors = self.cached_colors
         else:
+            print(f"{appearance_embed.shape=} {appearance_features.shape=} {temporal_embed.shape=}")
             colors = self.color_nn(
                 appearance_embed.repeat(appearance_features.shape[0], 1),
                 appearance_features,
+                temporal_embed.repeat(appearance_features.shape[0], 1),
             ).float()
             self.cached_colors = colors
 
