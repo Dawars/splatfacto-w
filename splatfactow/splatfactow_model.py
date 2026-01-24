@@ -1042,7 +1042,7 @@ class SplatfactoWModel(Model):
             colors = self.color_nn(
                 appearance_embed.repeat(appearance_features.shape[0], 1),
                 appearance_features,
-                temporal_embed.repeat(appearance_features.shape[0], 1), # todo make it optional
+                temporal_embed.repeat(appearance_features.shape[0], 1) if temporal_embed is not None else None,
             ).float()
             self.cached_colors = colors
 

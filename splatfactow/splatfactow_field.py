@@ -120,9 +120,9 @@ class SplatfactoWField(Field):
         appearance_features: Tensor,
         temporal_embed: Tensor,
     ) -> Tensor:
-        x = self.encoder(
-            torch.cat((appearance_embed, appearance_features, temporal_embed), dim=-1)
-        ).float()
+        inputs = (appearance_embed, appearance_features, temporal_embed) if temporal_embed is not None else \
+            (appearance_embed, appearance_features)
+        x = self.encoder(torch.cat(inputs, dim=-1)).float()
         base_color = self.sh_base_head(x)
         sh_rest = self.sh_rest_head(x)
         sh_coeffs = torch.cat([base_color, sh_rest], dim=-1).view(-1, self.sh_dim, 3)
