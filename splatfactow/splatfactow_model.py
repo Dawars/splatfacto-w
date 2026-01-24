@@ -1004,6 +1004,8 @@ class SplatfactoWModel(Model):
             temporal_embed = self.temporal_embeds(
                 torch.tensor(camera.metadata.get("years", 1960)-1900, device=self.device)
             )
+        else:
+            temporal_embed = None
         if self.training:
             assert camera.shape[0] == 1, "Only one camera at a time"
             optimized_camera_to_world = self.camera_optimizer.apply_to_camera(camera)
